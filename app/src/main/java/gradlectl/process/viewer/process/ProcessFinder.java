@@ -1,5 +1,7 @@
 package gradlectl.process.viewer.process;
 
+import com.sun.tools.attach.AttachNotSupportedException;
+import com.sun.tools.attach.VirtualMachine;
 import lombok.SneakyThrows;
 import sun.jvmstat.monitor.HostIdentifier;
 import sun.jvmstat.monitor.MonitorException;
@@ -8,6 +10,14 @@ import sun.jvmstat.monitor.MonitoredVm;
 import sun.jvmstat.monitor.MonitoredVmUtil;
 import sun.jvmstat.monitor.VmIdentifier;
 
+import javax.management.MBeanServerConnection;
+import javax.management.remote.JMXConnector;
+import javax.management.remote.JMXConnectorFactory;
+import javax.management.remote.JMXServiceURL;
+import java.io.IOException;
+import java.lang.management.ManagementFactory;
+import java.lang.management.MemoryMXBean;
+import java.lang.management.MemoryUsage;
 import java.net.URISyntaxException;
 import java.time.Duration;
 import java.time.Instant;
@@ -91,6 +101,7 @@ public class ProcessFinder {
                 .collect(Collectors.toList());
     }
 
+
     private Optional<GradleJvmProcess> toGradleJvmProcess(MonitoredHost monitoredHost, int vmPid, String mainClass, String gradleVersion, Instant now) {
         try {
             String vmIdString = "//" + vmPid + "?mode=r";
@@ -102,13 +113,42 @@ public class ProcessFinder {
             }
 
             ProcessHandle processHandle = processHandleOptional.get();
+            GradleJvmProcessStats stats = getProcessStats(vmPid).orElseGet(() -> new GradleJvmProcessStats(-1, -1, -1));
             String vmVersion = MonitoredVmUtil.vmVersion(vm);
             long secondsAlive = processHandle.info().startInstant().map(it -> Duration.between(it, now).getSeconds()).orElse(-1L);
             long childrenCount = processHandle.descendants().count();
             long parentPid = processHandle.parent().map(ProcessHandle::pid).orElse(-1L);
-            return Optional.of(new GradleJvmProcess(commandLine, commandLine, processHandle, parentPid, vmVersion, gradleVersion, childrenCount, secondsAlive));
+            return Optional.of(new GradleJvmProcess(commandLine, commandLine, processHandle, parentPid, vmVersion, gradleVersion, childrenCount, secondsAlive, stats));
         } catch (MonitorException | URISyntaxException ignored) {
             return Optional.empty();
+        }
+    }
+
+    private Optional<GradleJvmProcessStats> getProcessStats(int vmPid) {
+        JMXConnector connector = null;
+        try {
+            VirtualMachine vm = VirtualMachine.attach(vmPid + "");
+            String address = vm.startLocalManagementAgent();
+            connector = JMXConnectorFactory.connect(new JMXServiceURL(address));
+            MBeanServerConnection connection = connector.getMBeanServerConnection();
+            MemoryMXBean memoryBean = ManagementFactory.newPlatformMXBeanProxy(connection, ManagementFactory.MEMORY_MXBEAN_NAME, MemoryMXBean.class);
+            MemoryUsage heapMemory = memoryBean.getHeapMemoryUsage();
+            MemoryUsage nonHeapMemory = memoryBean.getNonHeapMemoryUsage();
+            com.sun.management.OperatingSystemMXBean cpuBean = ManagementFactory.newPlatformMXBeanProxy(
+                    connection,
+                    ManagementFactory.OPERATING_SYSTEM_MXBEAN_NAME,
+                    com.sun.management.OperatingSystemMXBean.class
+            );
+            return Optional.of(new GradleJvmProcessStats(cpuBean.getProcessCpuLoad(), heapMemory.getUsed(), nonHeapMemory.getUsed()));
+        } catch (AttachNotSupportedException | IOException e) {
+            return Optional.empty();
+        } finally {
+            if (connector != null) {
+                try {
+                    connector.close();
+                } catch (IOException ignored) {
+                }
+            }
         }
     }
 }

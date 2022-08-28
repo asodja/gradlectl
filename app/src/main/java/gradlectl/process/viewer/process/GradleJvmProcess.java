@@ -17,4 +17,5 @@ public class GradleJvmProcess {
     private final String gradleVersion;
     private final long childrenCount;
     private final long secondsAlive;
+    private final GradleJvmProcessStats stats;
 }

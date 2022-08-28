@@ -41,6 +41,35 @@ enum TableHeader {
             return process.getChildrenCount() + "";
         }
     },
+    CPU("Cpu") {
+        @Override
+        public String getValue(GradleJvmProcess process) {
+            if (process.getStats().getCpuUsage() <= 0) {
+                return "N/A";
+            }
+            return String.format("%.3f", process.getStats().getCpuUsage() * 100) + "%";
+        }
+    },
+    MEMORY("Mem") {
+        @Override
+        public String getValue(GradleJvmProcess process) {
+            if (process.getStats().getHeapMemoryBytes() < 0 && process.getStats().getNonHeapMemoryBytes() < 0) {
+                return "N/A";
+            }
+            long memoryBytes = 0;
+            if (process.getStats().getHeapMemoryBytes() > 0) {
+                memoryBytes += process.getStats().getHeapMemoryBytes();
+            }
+            if (process.getStats().getNonHeapMemoryBytes() > 0) {
+                memoryBytes += process.getStats().getNonHeapMemoryBytes();
+            }
+            if (memoryBytes > 1_000_000_000) {
+                return String.format("%.3f", memoryBytes / 1_000_000_000.0) + "GB";
+            } else {
+                return String.format("%.1f", memoryBytes / 1_000_000.0) + "MB";
+            }
+        }
+    },
     UPTIME("Uptime") {
         @Override
         public String getValue(GradleJvmProcess process) {
