@@ -16,6 +16,7 @@ import java.util.List;
 import java.util.Optional;
 import java.util.Set;
 import java.util.stream.Collectors;
+import java.util.stream.Stream;
 
 public class ProcessFinder {
 
@@ -28,11 +29,21 @@ public class ProcessFinder {
         Instant now = Instant.now();
         HostIdentifier hostIdentifier = new HostIdentifier("local://127.0.0.1?mode=r");
         MonitoredHost monitoredHost = MonitoredHost.getMonitoredHost(hostIdentifier);
-        return findGradleDaemonsAndWorkers(monitoredHost, monitoredHost.activeVms(), now);
+        List<GradleJvmProcess> gradleJvmProcesses = findGradleDaemonsAndWorkers(monitoredHost, now);
+        Set<Integer> knownPids = gradleJvmProcesses.stream()
+                .map(it -> (int) it.getProcessHandle().pid())
+                .collect(Collectors.toSet());
+        List<Integer> pidsToSearch = monitoredHost.activeVms().stream()
+                .filter(pid -> !knownPids.contains(pid))
+                .collect(Collectors.toList());
+        List<GradleJvmProcess> orphanGradleProcesses = findOrphanGradleProcesses(pidsToSearch, monitoredHost, now);
+        return Stream.concat(gradleJvmProcesses.stream(), orphanGradleProcesses.stream())
+                .collect(Collectors.toList());
     }
 
-    private List<GradleJvmProcess> findGradleDaemonsAndWorkers(MonitoredHost monitoredHost, Set<Integer> activeVms, Instant now) {
-        return activeVms.stream()
+    @SneakyThrows
+    private List<GradleJvmProcess> findGradleDaemonsAndWorkers(MonitoredHost monitoredHost, Instant now) {
+        return monitoredHost.activeVms().stream()
                 .map(vmPid -> toGradleJvmProcess(monitoredHost, vmPid, DAEMON_MAIN, "Unknown", now))
                 .filter(Optional::isPresent)
                 .flatMap(daemonOptional -> {
@@ -43,15 +54,19 @@ public class ProcessFinder {
                             .withGradleVersion(gradleVersion);
                     List<GradleJvmProcess> processes = new ArrayList<>();
                     processes.add(daemon);
-                    processes.addAll(findChildGradleWorkers(monitoredHost, daemon.getProcessHandle(), gradleVersion, now));
-                    processes.addAll(findChildKotlinDaemons(monitoredHost, daemon.getProcessHandle(), gradleVersion, now));
+                    List<Integer> childPids = daemon.getProcessHandle()
+                            .children()
+                            .map(process -> (int) process.pid())
+                            .collect(Collectors.toList());
+                    processes.addAll(findChildGradleWorkers(childPids, monitoredHost, gradleVersion, now));
+                    processes.addAll(findChildKotlinDaemons(childPids, monitoredHost, gradleVersion, now));
                     return processes.stream();
                 }).collect(Collectors.toList());
     }
 
-    private List<GradleJvmProcess> findChildGradleWorkers(MonitoredHost monitoredHost, ProcessHandle parentProcessHandle, String gradleVersion, Instant now) {
-        return parentProcessHandle.children()
-                .map(child -> toGradleJvmProcess(monitoredHost, (int) child.pid(), WORKER_MAIN, gradleVersion, now))
+    private List<GradleJvmProcess> findChildGradleWorkers(List<Integer> childPids, MonitoredHost monitoredHost, String gradleVersion, Instant now) {
+        return childPids.stream()
+                .map(pid -> toGradleJvmProcess(monitoredHost, pid, WORKER_MAIN, gradleVersion, now))
                 .filter(Optional::isPresent)
                 .map(it -> it.get().withName("Worker " + it.get().getCommandLine()
                         .replace("worker.org.gradle.process.internal.worker.GradleWorkerMain", "")
@@ -61,11 +76,18 @@ public class ProcessFinder {
                 .collect(Collectors.toList());
     }
 
-    private List<GradleJvmProcess> findChildKotlinDaemons(MonitoredHost monitoredHost, ProcessHandle parentProcessHandle, String gradleVersion, Instant now) {
-        return parentProcessHandle.children()
-                .map(child -> toGradleJvmProcess(monitoredHost, (int) child.pid(), KOTLIN_COMPILE_DAEMON_MAIN, gradleVersion, now))
+    private List<GradleJvmProcess> findChildKotlinDaemons(List<Integer> childPids, MonitoredHost monitoredHost, String gradleVersion, Instant now) {
+        return childPids.stream()
+                .map(pid -> toGradleJvmProcess(monitoredHost, pid, KOTLIN_COMPILE_DAEMON_MAIN, gradleVersion, now))
                 .filter(Optional::isPresent)
                 .map(it -> it.get().withName("KotlinCompileDaemon"))
+                .collect(Collectors.toList());
+    }
+
+    private List<GradleJvmProcess> findOrphanGradleProcesses(List<Integer> pidsToSearch, MonitoredHost monitoredHost, Instant now) {
+        List<GradleJvmProcess> workers = findChildGradleWorkers(pidsToSearch, monitoredHost, "N/A", now);
+        List<GradleJvmProcess> kotlinDaemons = findChildKotlinDaemons(pidsToSearch, monitoredHost, "N/A", now);
+        return Stream.concat(workers.stream(), kotlinDaemons.stream())
                 .collect(Collectors.toList());
     }
 
