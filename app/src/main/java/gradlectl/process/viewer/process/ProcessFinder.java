@@ -21,6 +21,7 @@ public class ProcessFinder {
 
     private static final String DAEMON_MAIN = "org.gradle.launcher.daemon.bootstrap.GradleDaemon";
     private static final String WORKER_MAIN = "worker.org.gradle.process.internal.worker.GradleWorkerMain";
+    private static final String KOTLIN_COMPILE_DAEMON_MAIN = "org.jetbrains.kotlin.daemon.KotlinCompileDaemon";
 
     @SneakyThrows
     public List<GradleJvmProcess> findGradleJvmProcesses() {
@@ -43,6 +44,7 @@ public class ProcessFinder {
                     List<GradleJvmProcess> processes = new ArrayList<>();
                     processes.add(daemon);
                     processes.addAll(findChildGradleWorkers(monitoredHost, daemon.getProcessHandle(), gradleVersion, now));
+                    processes.addAll(findChildKotlinDaemons(monitoredHost, daemon.getProcessHandle(), gradleVersion, now));
                     return processes.stream();
                 }).collect(Collectors.toList());
     }
@@ -56,6 +58,14 @@ public class ProcessFinder {
                         .replace("'", "")
                         .replace("Gradle Worker Daemon", "")
                         .trim()))
+                .collect(Collectors.toList());
+    }
+
+    private List<GradleJvmProcess> findChildKotlinDaemons(MonitoredHost monitoredHost, ProcessHandle parentProcessHandle, String gradleVersion, Instant now) {
+        return parentProcessHandle.children()
+                .map(child -> toGradleJvmProcess(monitoredHost, (int) child.pid(), KOTLIN_COMPILE_DAEMON_MAIN, gradleVersion, now))
+                .filter(Optional::isPresent)
+                .map(it -> it.get().withName("KotlinCompileDaemon"))
                 .collect(Collectors.toList());
     }
 
