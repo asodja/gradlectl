@@ -39,7 +39,7 @@ Arguments:
 
 # How to install
 
-1. `git clone git@github.com:asodja/gradlectl.git`
+1. `git clone https://github.com/asodja/gradlectl.git`
 2. `cd gradlectl`
 3. `./gradlew install`: this will install a distribution to `<path to gradlectl project>/distribution`
 4. Add alias to a shell startup script (e.g. .zshrc, .bashrc etc.) to path of the distribution, or add the distribution path to `$PATH`
@@ -50,4 +50,4 @@ Example of an alias for MacOS:
 Note: You can also modify the distribution installation directory with `gctl.install.dir` Gradle property or System property.
 
 # Requirements
-Gradlectl has to be run with Java11 or later.
+Gradlectl has to be run with Java 11 or later.
