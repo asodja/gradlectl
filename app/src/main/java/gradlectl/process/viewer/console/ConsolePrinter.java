@@ -23,12 +23,14 @@ public class ConsolePrinter {
             }
         }
 
+        StringBuilder output = new StringBuilder();
         for (int i = 0; i < processes.size() + 1; i++) {
             for (TableColumn column : columns) {
-                System.out.printf("%-" + (column.getMaxWidth() + TABLE_COLUMNS_OFFSET) + "s", column.getValue(i));
+                output.append(String.format("%-" + (column.getMaxWidth() + TABLE_COLUMNS_OFFSET) + "s", column.getValue(i)));
             }
-            System.out.println();
+            output.append("\n");
         }
+        System.out.print(output);
     }
 
     public void printProcessTree(long pid) {
