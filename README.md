@@ -51,3 +51,13 @@ Note: You can also modify the distribution installation directory with `gctl.ins
 
 # Requirements
 Gradlectl has to be run with Java 11 or later.
+
+# Slow execution on macOS 
+Gradlectl finds active JVMs via network on 127.0.0.1 (localhost). On macOS such calls can be slow. 
+
+To speed up the execution, add your machine local hostname to `/etc/hosts`, like:
+```
+127.0.0.1 localhost <hostname>
+::1       localhost <hostname>
+```
+where `<hostname>` is value provided by `hostname` command.
