@@ -51,6 +51,7 @@ public class Main {
     private static void killAll() {
         List<GradleJvmProcess> daemons = new ProcessFinder().findGradleJvmProcesses();
         daemons.forEach(daemon -> daemon.getProcessHandle().destroyForcibly());
+        System.out.printf("Killed %d daemons%n", daemons.size());
     }
 
     private static void printAll() {
